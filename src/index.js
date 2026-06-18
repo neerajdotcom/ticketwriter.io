@@ -16,21 +16,32 @@ For each ticket output:
 - acceptance_criteria: 4-6 concrete testable conditions, each starting with a verb or noun
 - references_needed: only if determinable from the feedback (omit the field or use an empty array otherwise)
 
-Return ONLY a valid JSON array of ticket objects, no markdown, no preamble, no explanation.`;
+Return ONLY a valid JSON object of the form {"tickets": [...]}, no markdown, no preamble, no explanation.`;
 
 function extractJsonArray(text) {
-  try {
-    const clean = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
-    const parsed = JSON.parse(clean);
-    if (Array.isArray(parsed)) return parsed;
-  } catch (_) {}
-
-  const match = text.match(/\[[\s\S]*\]/);
-  if (match) {
+  const tryParse = (raw) => {
     try {
-      const parsed = JSON.parse(match[0]);
+      const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) return parsed;
+      if (parsed && Array.isArray(parsed.tickets)) return parsed.tickets;
     } catch (_) {}
+    return null;
+  };
+
+  const clean = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+  const direct = tryParse(clean);
+  if (direct) return direct;
+
+  const objMatch = text.match(/\{[\s\S]*\}/);
+  if (objMatch) {
+    const parsed = tryParse(objMatch[0]);
+    if (parsed) return parsed;
+  }
+
+  const arrMatch = text.match(/\[[\s\S]*\]/);
+  if (arrMatch) {
+    const parsed = tryParse(arrMatch[0]);
+    if (parsed) return parsed;
   }
 
   return null;
@@ -49,40 +60,22 @@ async function handleGenerate(request, env) {
     return Response.json({ error: 'Missing feedback text' }, { status: 400 });
   }
 
-  if (!env.ANTHROPIC_API_KEY) {
-    return Response.json({ error: 'Server is not configured with an API key' }, { status: 500 });
-  }
-
-  let apiRes;
+  let aiRes;
   try {
-    apiRes = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': env.ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 4000,
-        system: SYSTEM_PROMPT,
-        messages: [{ role: 'user', content: `Feedback:\n${feedback}\n\nReturn only the JSON array.` }]
-      })
+    aiRes = await env.AI.run('@cf/meta/llama-3.3-70b-instruct-fp8-fast', {
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: `Feedback:\n${feedback}\n\nReturn only the JSON object.` }
+      ],
+      response_format: { type: 'json_object' },
+      max_tokens: 4096,
+      temperature: 0.2
     });
   } catch (err) {
-    return Response.json({ error: `Could not reach Claude API: ${err.message}` }, { status: 502 });
+    return Response.json({ error: `Could not reach Workers AI: ${err.message}` }, { status: 502 });
   }
 
-  const data = await apiRes.json();
-
-  if (!apiRes.ok || data.error) {
-    return Response.json({ error: data.error?.message || `API error (${apiRes.status})` }, { status: 502 });
-  }
-
-  const rawText = (data.content || [])
-    .filter(item => item.type === 'text')
-    .map(item => item.text || '')
-    .join('');
+  const rawText = aiRes.response || '';
 
   const tickets = extractJsonArray(rawText);
 
