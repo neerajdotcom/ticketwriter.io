@@ -393,10 +393,15 @@
 
 <script>
   const feedbackEl = document.getElementById('feedback');
-  feedbackEl.addEventListener('input', () => {
-    document.getElementById('charCount').textContent = feedbackEl.value.length;
-  });
-
+feedbackEl.addEventListener('input', () => {
+  document.getElementById('charCount').textContent = feedbackEl.value.length;
+});
+  feedbackEl.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    generateTickets();
+  }
+});
   const priorityColors = {
     'Critical': '#ef4444',
     'High': '#f97316',
