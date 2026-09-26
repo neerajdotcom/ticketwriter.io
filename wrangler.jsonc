@@ -1,0 +1,14 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "ticketwriter",
+  "compatibility_date": "2026-06-18",
+  "observability": {
+    "enabled": true
+  },
+  "assets": {
+    "directory": "public"
+  },
+  "compatibility_flags": [
+    "nodejs_compat"
+  ]
+}
